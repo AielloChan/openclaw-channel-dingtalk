@@ -159,6 +159,8 @@ openclaw configure --section channels
 
 - ✅ **Card.Instance.Write** — 创建和投放卡片实例
 - ✅ **Card.Streaming.Write** — 对卡片进行流式更新
+- ✅ **机器人消息发送相关权限** — 允许机器人向单聊/群聊发送消息
+- ✅ **媒体文件上传相关权限** — 允许调用媒体上传接口发送图片、语音、视频、文件
 
 **步骤：**
 
@@ -313,7 +315,10 @@ openclaw gateway restart
 | 文本     | ✅   | 完整支持                         |
 | Markdown | ✅   | 自动检测或手动指定               |
 | 互动卡片 | ✅   | 支持流式更新，适用于 AI 实时输出 |
-| 图片     | ⏳   | 需要通过媒体上传 API             |
+| 图片     | ✅   | 先上传媒体再发送，支持本地路径和 HTTP(S) URL |
+| 语音     | ✅   | 先上传媒体再发送                 |
+| 视频     | ✅   | 先上传媒体再发送                 |
+| 文件     | ✅   | 先上传媒体再发送                 |
 
 ## API 消耗说明
 
@@ -553,6 +558,10 @@ finishAICard(card, content, log); // 完成并关闭卡片
 
 // 自动模式选择
 sendMessage(config, conversationId, text, options); // 根据配置自动选择（含卡片/文本回退）
+
+// 主动媒体发送
+uploadMedia(config, mediaPath, mediaType, log); // 上传媒体并返回 media_id
+sendProactiveMedia(config, target, mediaPath, mediaType, options); // 发送图片/语音/视频/文件
 
 // 认证
 getAccessToken(config, log); // 获取访问令牌

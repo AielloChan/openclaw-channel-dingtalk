@@ -5,15 +5,21 @@
  * Provides functions for media type detection and file upload to DingTalk media servers.
  */
 
-import * as fs from "fs";
-import { promises as fsPromises } from "fs";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { promises as fsPromises } from "node:fs";
 import axios from "axios";
 import FormData from "form-data";
 import type { DingTalkConfig, Logger } from "./types";
 import { formatDingTalkErrorPayloadLog } from "./utils";
 
 export type DingTalkMediaType = "image" | "voice" | "video" | "file";
+
+export interface PreparedMediaInput {
+  path: string;
+  cleanup?: () => Promise<void>;
+}
 
 /**
  * Detect media type from file extension
@@ -38,6 +44,86 @@ export function detectMediaTypeFromExtension(filePath: string): DingTalkMediaTyp
   }
 
   return "file";
+}
+
+function isRemoteMediaUrl(input: string): boolean {
+  try {
+    const parsed = new URL(input);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function detectExtensionFromContentType(contentType?: string): string {
+  const normalized = contentType?.split(";")[0]?.trim().toLowerCase();
+  switch (normalized) {
+    case "image/jpeg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/gif":
+      return ".gif";
+    case "image/bmp":
+      return ".bmp";
+    case "audio/amr":
+      return ".amr";
+    case "audio/mpeg":
+      return ".mp3";
+    case "audio/wav":
+    case "audio/x-wav":
+      return ".wav";
+    case "video/mp4":
+      return ".mp4";
+    case "application/pdf":
+      return ".pdf";
+    default:
+      return "";
+  }
+}
+
+export async function prepareMediaInput(
+  input: string,
+  log?: Logger,
+): Promise<PreparedMediaInput> {
+  const trimmed = input.trim();
+  if (!isRemoteMediaUrl(trimmed)) {
+    return { path: trimmed };
+  }
+
+  const response = await axios.get(trimmed, {
+    responseType: "arraybuffer",
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+  const contentType =
+    typeof response.headers?.["content-type"] === "string"
+      ? response.headers["content-type"]
+      : undefined;
+  const urlPath = new URL(trimmed).pathname;
+  const ext = path.extname(urlPath) || detectExtensionFromContentType(contentType) || ".bin";
+  const tempPath = path.join(os.tmpdir(), `dingtalk_${Date.now()}${ext}`);
+  const buffer = Buffer.isBuffer(response.data)
+    ? response.data
+    : Buffer.from(response.data as ArrayBuffer);
+
+  await fsPromises.writeFile(tempPath, buffer);
+  log?.debug?.(`[DingTalk] Downloaded remote media to temp file: ${tempPath}`);
+
+  return {
+    path: tempPath,
+    cleanup: async () => {
+      try {
+        await fsPromises.unlink(tempPath);
+      } catch (err: unknown) {
+        const code = typeof err === "object" && err !== null && "code" in err ? err.code : undefined;
+        if (code !== "ENOENT") {
+          const message = err instanceof Error ? err.message : String(err);
+          log?.debug?.(`[DingTalk] Failed to remove temp media ${tempPath}: ${message}`);
+        }
+      }
+    },
+  };
 }
 
 /**

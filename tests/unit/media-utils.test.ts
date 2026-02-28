@@ -3,10 +3,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import axios from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { detectMediaTypeFromExtension, uploadMedia } from '../../src/media-utils';
+import { detectMediaTypeFromExtension, prepareMediaInput, uploadMedia } from '../../src/media-utils';
 
 vi.mock('axios', () => {
     const mockAxios = {
+        get: vi.fn(),
         post: vi.fn(),
         isAxiosError: (err: unknown) => Boolean((err as { isAxiosError?: boolean })?.isAxiosError),
     };
@@ -16,6 +17,7 @@ vi.mock('axios', () => {
     };
 });
 
+const mockedAxiosGet = vi.mocked((axios as any).get);
 const mockedAxiosPost = vi.mocked((axios as any).post);
 
 function createTempFile(content: Buffer): string {
@@ -25,6 +27,7 @@ function createTempFile(content: Buffer): string {
 }
 
 afterEach(() => {
+    mockedAxiosGet.mockReset();
     mockedAxiosPost.mockReset();
 });
 
@@ -52,6 +55,23 @@ describe('media-utils', () => {
         expect(mockedAxiosPost.mock.calls[0]?.[0]).toContain('access_token=token_abc&type=file');
 
         fs.rmSync(path.dirname(mediaPath), { recursive: true, force: true });
+    });
+
+    it('downloads remote media to a temp file and cleans it up', async () => {
+        mockedAxiosGet.mockResolvedValueOnce({
+            data: Buffer.from('img'),
+            headers: { 'content-type': 'image/png' },
+        } as any);
+
+        const prepared = await prepareMediaInput('https://example.com/path/photo', {
+            debug: vi.fn(),
+        } as any);
+
+        expect(prepared.path).toMatch(/dingtalk_\d+\.png$/);
+        expect(fs.existsSync(prepared.path)).toBe(true);
+
+        await prepared.cleanup?.();
+        expect(fs.existsSync(prepared.path)).toBe(false);
     });
 
     it('returns null when file exceeds media size limit', async () => {

@@ -10,6 +10,7 @@ import { ConnectionManager } from "./connection-manager";
 import { isMessageProcessed, markMessageProcessed } from "./dedup";
 import { handleDingTalkMessage } from "./inbound-handler";
 import { getLogger } from "./logger-context";
+import { prepareMediaInput } from "./media-utils";
 import { dingtalkOnboardingAdapter } from "./onboarding.js";
 import { resolveOriginalPeerId } from "./peer-id-registry";
 import {
@@ -231,13 +232,17 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
         );
       }
 
-      const actualMediaPath = resolveRelativePath(rawMediaPath);
-
-      getLogger()?.debug?.(
-        `[DingTalk] sendMedia resolved path: rawMediaPath=${rawMediaPath}, actualMediaPath=${actualMediaPath}`,
-      );
-
+      let preparedMedia;
       try {
+        preparedMedia = await prepareMediaInput(rawMediaPath, log);
+        const actualMediaPath = preparedMedia.cleanup
+          ? preparedMedia.path
+          : resolveRelativePath(preparedMedia.path);
+
+        getLogger()?.debug?.(
+          `[DingTalk] sendMedia resolved path: rawMediaPath=${rawMediaPath}, actualMediaPath=${actualMediaPath}`,
+        );
+
         const mediaType = providedMediaType || detectMediaTypeFromExtension(actualMediaPath);
         const result = await sendProactiveMedia(config, to, actualMediaPath, mediaType, {
           log,
@@ -273,6 +278,8 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
             : err?.message || "sendMedia failed",
           { cause: err },
         );
+      } finally {
+        await preparedMedia?.cleanup?.();
       }
     },
   },

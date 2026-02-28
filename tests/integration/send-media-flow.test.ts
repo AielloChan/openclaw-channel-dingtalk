@@ -1,8 +1,9 @@
 import * as path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { detectMediaTypeFromExtensionMock, sendProactiveMediaMock } = vi.hoisted(() => ({
+const { detectMediaTypeFromExtensionMock, prepareMediaInputMock, sendProactiveMediaMock } = vi.hoisted(() => ({
     detectMediaTypeFromExtensionMock: vi.fn(),
+    prepareMediaInputMock: vi.fn(),
     sendProactiveMediaMock: vi.fn(),
 }));
 
@@ -23,12 +24,18 @@ vi.mock('../../src/send-service', async () => ({
     uploadMedia: vi.fn(),
 }));
 
+vi.mock('../../src/media-utils', async () => ({
+    prepareMediaInput: prepareMediaInputMock,
+}));
+
 import { dingtalkPlugin } from '../../src/channel';
 
 describe('dingtalkPlugin.outbound.sendMedia flow', () => {
     beforeEach(() => {
         detectMediaTypeFromExtensionMock.mockReset();
+        prepareMediaInputMock.mockReset();
         sendProactiveMediaMock.mockReset();
+        prepareMediaInputMock.mockImplementation(async (input: string) => ({ path: input }));
     });
 
     it('auto-detects mediaType and sends with resolved absolute path', async () => {
@@ -84,6 +91,38 @@ describe('dingtalkPlugin.outbound.sendMedia flow', () => {
             '/tmp/voice.wav',
             'voice',
             expect.any(Object)
+        );
+    });
+
+    it('downloads remote mediaUrl before upload when input is an HTTP URL', async () => {
+        prepareMediaInputMock.mockResolvedValueOnce({
+            path: '/tmp/dingtalk_123.png',
+            cleanup: vi.fn(),
+        });
+        detectMediaTypeFromExtensionMock.mockReturnValueOnce('image');
+        sendProactiveMediaMock.mockResolvedValueOnce({
+            ok: true,
+            data: { processQueryKey: 'remote_1' },
+            messageId: 'remote_1',
+        });
+
+        await dingtalkPlugin.outbound.sendMedia({
+            cfg: { channels: { dingtalk: { clientId: 'id', clientSecret: 'sec' } } },
+            to: 'cidA1B2C3',
+            mediaUrl: 'https://example.com/photo.png',
+            accountId: 'default',
+        });
+
+        expect(prepareMediaInputMock).toHaveBeenCalledWith(
+            'https://example.com/photo.png',
+            undefined
+        );
+        expect(sendProactiveMediaMock).toHaveBeenCalledWith(
+            expect.any(Object),
+            'cidA1B2C3',
+            '/tmp/dingtalk_123.png',
+            'image',
+            expect.objectContaining({ accountId: 'default' })
         );
     });
 
