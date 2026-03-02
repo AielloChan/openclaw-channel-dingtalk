@@ -10,7 +10,7 @@ import { dingtalkOnboardingAdapter } from '../../src/onboarding';
 
 describe('dingtalkOnboardingAdapter', () => {
     it('getStatus returns configured=false for empty config', async () => {
-        const result = await dingtalkOnboardingAdapter.getStatus({ cfg: {} as any });
+        const result = await dingtalkOnboardingAdapter.getStatus({ cfg: {}, accountOverrides: {} });
 
         expect(result.channel).toBe('dingtalk');
         expect(result.configured).toBe(false);
@@ -29,10 +29,12 @@ describe('dingtalkOnboardingAdapter', () => {
             .mockResolvedValueOnce('msgContent')
             .mockResolvedValueOnce('user_a, user_b')
             .mockResolvedValueOnce('')
-            .mockResolvedValueOnce('7');
+            .mockResolvedValueOnce('7')
+            .mockResolvedValueOnce('20');
 
         const confirm = vi
             .fn()
+            .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(true)
             .mockResolvedValueOnce(true);
@@ -49,16 +51,23 @@ describe('dingtalkOnboardingAdapter', () => {
             shouldPromptAccountIds: false,
         } as any);
 
+        const dingtalkConfig = result.cfg.channels?.dingtalk;
+        expect(dingtalkConfig).toBeTruthy();
+        if (!dingtalkConfig) {
+            throw new Error('Expected dingtalk config to be present');
+        }
+
         expect(result.accountId).toBe('default');
-        expect(result.cfg.channels.dingtalk.clientId).toBe('ding_client');
-        expect(result.cfg.channels.dingtalk.clientSecret).toBe('ding_secret');
-        expect(result.cfg.channels.dingtalk.robotCode).toBe('ding_robot');
-        expect(result.cfg.channels.dingtalk.messageType).toBe('card');
-        expect(result.cfg.channels.dingtalk.cardTemplateId).toBe('tmpl.schema');
-        expect(result.cfg.channels.dingtalk.cardTemplateKey).toBe('msgContent');
-        expect(result.cfg.channels.dingtalk.allowFrom).toEqual(['user_a', 'user_b']);
-        expect(result.cfg.channels.dingtalk.mediaUrlAllowlist).toBeUndefined();
-        expect(result.cfg.channels.dingtalk.maxReconnectCycles).toBe(7);
+        expect(dingtalkConfig.clientId).toBe('ding_client');
+        expect(dingtalkConfig.clientSecret).toBe('ding_secret');
+        expect(dingtalkConfig.robotCode).toBe('ding_robot');
+        expect(dingtalkConfig.messageType).toBe('card');
+        expect(dingtalkConfig.cardTemplateId).toBe('tmpl.schema');
+        expect(dingtalkConfig.cardTemplateKey).toBe('msgContent');
+        expect(dingtalkConfig.allowFrom).toEqual(['user_a', 'user_b']);
+        expect(dingtalkConfig.mediaUrlAllowlist).toBeUndefined();
+        expect(dingtalkConfig.maxReconnectCycles).toBe(7);
+        expect(dingtalkConfig.mediaMaxMb).toBe(20);
         expect(note).toHaveBeenCalled();
     });
 });

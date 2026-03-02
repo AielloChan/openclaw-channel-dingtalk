@@ -55,6 +55,10 @@ export interface DingTalkConfig extends OpenClawConfig {
   reconnectJitter?: number;
   /** Maximum number of runtime reconnect cycles before giving up (default: 10) */
   maxReconnectCycles?: number;
+  /** Whether to use ConnectionManager; when false, use DWClient native keepAlive+autoReconnect */
+  useConnectionManager?: boolean;
+  /** Maximum inbound media file size in MB (overrides runtime default when set) */
+  mediaMaxMb?: number;
   proactivePermissionHint?: {
     enabled?: boolean;
     cooldownHours?: number;
@@ -89,6 +93,10 @@ export interface DingTalkChannelConfig {
   reconnectJitter?: number;
   /** Maximum number of runtime reconnect cycles before giving up (default: 10) */
   maxReconnectCycles?: number;
+  /** Whether to use ConnectionManager; when false, use DWClient native keepAlive+autoReconnect */
+  useConnectionManager?: boolean;
+  /** Maximum inbound media file size in MB (overrides runtime default when set) */
+  mediaMaxMb?: number;
   proactivePermissionHint?: {
     enabled?: boolean;
     cooldownHours?: number;
@@ -569,6 +577,8 @@ export function resolveDingTalkAccount(
       maxReconnectDelay: dingtalk?.maxReconnectDelay,
       reconnectJitter: dingtalk?.reconnectJitter,
       maxReconnectCycles: dingtalk?.maxReconnectCycles,
+      useConnectionManager: dingtalk?.useConnectionManager,
+      mediaMaxMb: dingtalk?.mediaMaxMb,
       proactivePermissionHint: dingtalk?.proactivePermissionHint,
     };
     return {

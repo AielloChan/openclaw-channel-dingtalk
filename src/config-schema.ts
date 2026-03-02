@@ -81,6 +81,12 @@ const DingTalkAccountConfigSchema = z.object({
   /** Maximum number of runtime reconnect cycles before giving up (default: 10) */
   maxReconnectCycles: z.number().int().min(1).optional().default(10),
 
+  /** Whether to use ConnectionManager (default: true). When false, rely on DWClient native keepAlive+autoReconnect. */
+  useConnectionManager: z.boolean().optional().default(true),
+
+  /** Maximum inbound media file size in MB (overrides runtime default when set) */
+  mediaMaxMb: z.number().int().min(1).optional(),
+
   proactivePermissionHint: z
     .object({
       enabled: z.boolean().optional().default(true),

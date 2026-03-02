@@ -2,6 +2,19 @@
 
 钉钉企业内部机器人 Channel 插件，使用 Stream 模式（无需公网 IP）。
 
+> [!IMPORTANT]
+> **重要声明（上游消息丢失排查中）**
+>
+> 当前我们观察到：部分消息在钉钉 App 端发送后，未稳定到达本地 `dingtalk-stream` SDK 回调入口（已通过最小复现与链路统计验证）。
+> 相关问题已向钉钉开发者后台提交了工单，在相关问题得到解决前，暂停本项目的Feature开发，仅进入维护模式。
+>
+> 相关信息：
+> - issue 讨论：[#104](https://github.com/soimy/openclaw-channel-dingtalk/issues/104)
+> - 最小可复现说明（SDK 侧）：<https://github.com/soimy/dingtalk-stream-sdk-nodejs/blob/main/docs/inbound-msg-missing-repro.zh-CN.md>
+> - 插件侧测试分支：[`test/inbound-msg-missing`](https://github.com/soimy/openclaw-channel-dingtalk/tree/test/inbound-msg-missing)
+>
+> 在上游链路问题完全收敛前，建议关键业务场景先做好重试与可观测性（trace 前缀、计数日志、缺失 ID 对账）。
+
 ## 功能特性
 
 - ✅ **Stream 模式** — WebSocket 长连接，无需公网 IP 或 Webhook
@@ -228,6 +241,7 @@ openclaw configure --section channels
       "groupPolicy": "open",
       "debug": false,
       "messageType": "markdown", // 或 "card"
+      // "mediaMaxMb": 20,  // 可选：接收文件大小上限（MB），默认 5 MB
       // 仅card需要配置
       "cardTemplateId": "你复制的模板ID",
       "cardTemplateKey": "你模板的内容变量"
@@ -263,6 +277,7 @@ openclaw gateway restart
 | `cardTemplateId`        | string   |              | AI 互动卡片模板 ID（仅当 messageType=card） |
 | `cardTemplateKey`       | string   | `"content"`  | 卡片模板内容字段键（仅当 messageType=card） |
 | `debug`                 | boolean  | `false`      | 是否开启调试日志                            |
+| `mediaMaxMb`            | number   | -            | 接收文件大小上限（MB），不设则使用 runtime 默认值（5 MB） |
 | `maxConnectionAttempts` | number   | `10`         | 最大连接尝试次数                            |
 | `initialReconnectDelay` | number   | `1000`       | 初始重连延迟（毫秒）                        |
 | `maxReconnectDelay`     | number   | `60000`      | 最大重连延迟（毫秒）                        |
