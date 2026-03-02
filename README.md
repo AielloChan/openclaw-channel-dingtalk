@@ -329,6 +329,49 @@ openclaw gateway restart
 > 如需从受控内网媒体服务下载，请配置 `mediaUrlAllowlist`（例如 `192.168.1.23`、`files.internal.example`、`10.0.0.0/8`）；配置后仅白名单主机可下载。
 > 远程域名会先做 DNS 解析并校验解析结果；若解析到内网/本地地址且未被白名单明确允许，将在下载前拒绝。
 
+#### mediaUrlAllowlist 配置示例
+
+`mediaUrlAllowlist` 支持以下写法：
+
+- 主机名：`cdn.example.com`
+- 泛域名：`*.example.com`
+- 主机+端口：`files.internal.example:8443`
+- 单个 IP：`192.168.1.23`、`fd00::1`
+- CIDR 网段：`10.0.0.0/8`、`fc00::/7`
+
+示例：
+
+```json
+{
+  "channels": {
+    "dingtalk": {
+      "clientId": "your-app-key",
+      "clientSecret": "your-app-secret",
+      "mediaUrlAllowlist": [
+        "cdn.example.com",
+        "*.assets.example.com",
+        "files.internal.example:8443",
+        "192.168.1.23",
+        "10.0.0.0/8",
+        "fc00::/7"
+      ]
+    }
+  }
+}
+```
+
+> 行为说明：配置 `mediaUrlAllowlist` 后，下载阶段进入严格白名单模式，非白名单目标一律拒绝。
+
+#### sendMedia 常见错误码
+
+`outbound.sendMedia(...)` 在下载准备失败时会透出错误码前缀（例如 `remote media preparation failed: [ERR_MEDIA_PRIVATE_HOST] ...`）：
+
+- `ERR_MEDIA_ALLOWLIST_MISS`：目标 host 不在 `mediaUrlAllowlist`
+- `ERR_MEDIA_PRIVATE_HOST`：URL 本身是本地/内网 host 且未被允许
+- `ERR_MEDIA_DNS_UNRESOLVED`：域名无法解析
+- `ERR_MEDIA_DNS_PRIVATE`：域名解析结果命中本地/内网地址且未被允许
+- `ERR_MEDIA_REDIRECT_HOST`：下载阶段出现非预期重定向 host
+
 ## API 消耗说明
 
 ### Text/Markdown 模式
