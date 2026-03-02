@@ -11,7 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promises as fsPromises } from "node:fs";
 import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import axios from "axios";
 import FormData from "form-data";
 import type { DingTalkConfig, Logger } from "./types";
@@ -24,6 +24,24 @@ export interface PreparedMediaInput {
   cleanup?: () => Promise<void>;
 }
 
+export const REMOTE_MEDIA_ERROR_CODES = {
+  ALLOWLIST_MISS: "ERR_MEDIA_ALLOWLIST_MISS",
+  PRIVATE_HOST: "ERR_MEDIA_PRIVATE_HOST",
+  DNS_UNRESOLVED: "ERR_MEDIA_DNS_UNRESOLVED",
+  DNS_PRIVATE: "ERR_MEDIA_DNS_PRIVATE",
+  REDIRECT_HOST: "ERR_MEDIA_REDIRECT_HOST",
+} as const;
+
+export class RemoteMediaError extends Error {
+  constructor(
+    message: string,
+    public readonly code: (typeof REMOTE_MEDIA_ERROR_CODES)[keyof typeof REMOTE_MEDIA_ERROR_CODES],
+  ) {
+    super(message);
+    this.name = "RemoteMediaError";
+  }
+}
+
 const REMOTE_MEDIA_DOWNLOAD_TIMEOUT_MS = 10_000;
 const REMOTE_MEDIA_MAX_BYTES = 20 * 1024 * 1024;
 
@@ -31,44 +49,44 @@ function normalizeAllowlistEntry(entry: string): string {
   return entry.trim().toLowerCase();
 }
 
-function isIPv4InCidr(ipv4: string, cidr: string): boolean {
+function normalizeHostname(hostname: string): string {
+  return hostname.replace(/^\[/, "").replace(/\]$/, "").trim().toLowerCase();
+}
+
+function isIpInCidr(ip: string, cidr: string): boolean {
   const [network, rawMask] = cidr.split("/");
   const mask = Number.parseInt(rawMask || "", 10);
-  if (!network || Number.isNaN(mask) || mask < 0 || mask > 32) {
+  const normalizedIp = normalizeHostname(ip);
+  const normalizedNetwork = normalizeHostname(network || "");
+  if (!normalizedNetwork || Number.isNaN(mask)) {
     return false;
   }
 
-  const ipParts = ipv4.split(".").map((part) => Number.parseInt(part, 10));
-  const networkParts = network.split(".").map((part) => Number.parseInt(part, 10));
-  if (
-    ipParts.length !== 4 ||
-    networkParts.length !== 4 ||
-    ipParts.some((part) => Number.isNaN(part)) ||
-    networkParts.some((part) => Number.isNaN(part))
-  ) {
+  const ipVersion = isIP(normalizedIp);
+  const networkVersion = isIP(normalizedNetwork);
+  if (ipVersion === 0 || ipVersion !== networkVersion) {
     return false;
   }
 
-  let ipValue = 0;
-  let networkValue = 0;
-  for (let i = 0; i < 4; i++) {
-    ipValue = (ipValue << 8) + ipParts[i];
-    networkValue = (networkValue << 8) + networkParts[i];
+  const blockList = new BlockList();
+  if (ipVersion === 4) {
+    blockList.addSubnet(normalizedNetwork, mask, "ipv4");
+    return blockList.check(normalizedIp, "ipv4");
   }
 
-  const maskBits = mask === 0 ? 0 : (~0 << (32 - mask)) >>> 0;
-  return (ipValue & maskBits) === (networkValue & maskBits);
+  blockList.addSubnet(normalizedNetwork, mask, "ipv6");
+  return blockList.check(normalizedIp, "ipv6");
 }
 
 function matchesAllowlistHost(hostname: string, port: string, entry: string): boolean {
-  const normalizedHost = hostname.toLowerCase();
+  const normalizedHost = normalizeHostname(hostname);
   const normalizedEntry = normalizeAllowlistEntry(entry);
   if (!normalizedEntry) {
     return false;
   }
 
   if (normalizedEntry.includes("/")) {
-    return isIP(normalizedHost) === 4 && isIPv4InCidr(normalizedHost, normalizedEntry);
+    return isIpInCidr(normalizedHost, normalizedEntry);
   }
 
   if (normalizedEntry.startsWith("*.")) {
@@ -123,7 +141,7 @@ function isRemoteMediaUrl(input: string): boolean {
 }
 
 function isPrivateOrLocalHost(hostname: string): boolean {
-  const normalized = hostname.trim().toLowerCase();
+  const normalized = normalizeHostname(hostname);
   if (!normalized) {
     return true;
   }
@@ -209,11 +227,17 @@ export async function prepareMediaInput(
   const inAllowlist = allowlistConfigured ? isAllowedByMediaUrlAllowlist(parsedUrl, allowlist) : false;
 
   if (allowlistConfigured && !inAllowlist) {
-    throw new Error(`remote media URL host is not in mediaUrlAllowlist: ${parsedUrl.hostname}`);
+    throw new RemoteMediaError(
+      `remote media URL host is not in mediaUrlAllowlist: ${parsedUrl.hostname}`,
+      REMOTE_MEDIA_ERROR_CODES.ALLOWLIST_MISS,
+    );
   }
 
   if (isPrivateHost && !inAllowlist) {
-    throw new Error(`remote media URL points to private or local network host: ${parsedUrl.hostname}`);
+    throw new RemoteMediaError(
+      `remote media URL points to private or local network host: ${parsedUrl.hostname}`,
+      REMOTE_MEDIA_ERROR_CODES.PRIVATE_HOST,
+    );
   }
 
   const isIpLiteralHost = isIP(parsedUrl.hostname) !== 0;
@@ -221,11 +245,17 @@ export async function prepareMediaInput(
   if (!isIpLiteralHost) {
     const resolvedRecords = await resolveHostname(parsedUrl.hostname);
     if (resolvedRecords.length === 0) {
-      throw new Error(`remote media URL host cannot be resolved: ${parsedUrl.hostname}`);
+      throw new RemoteMediaError(
+        `remote media URL host cannot be resolved: ${parsedUrl.hostname}`,
+        REMOTE_MEDIA_ERROR_CODES.DNS_UNRESOLVED,
+      );
     }
 
     if (!inAllowlist && resolvedRecords.some((record) => isPrivateOrLocalHost(record.address))) {
-      throw new Error(`remote media URL host resolves to private or local network address: ${parsedUrl.hostname}`);
+      throw new RemoteMediaError(
+        `remote media URL host resolves to private or local network address: ${parsedUrl.hostname}`,
+        REMOTE_MEDIA_ERROR_CODES.DNS_PRIVATE,
+      );
     }
 
     pinnedResolved = resolvedRecords[0];
@@ -237,7 +267,10 @@ export async function prepareMediaInput(
           return pinnedResolved;
         }
 
-        throw new Error(`remote media URL redirected to unexpected host: ${hostname}`);
+        throw new RemoteMediaError(
+          `remote media URL redirected to unexpected host: ${hostname}`,
+          REMOTE_MEDIA_ERROR_CODES.REDIRECT_HOST,
+        );
       }
     : undefined;
 

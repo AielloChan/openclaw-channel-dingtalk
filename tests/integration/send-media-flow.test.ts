@@ -142,7 +142,9 @@ describe('dingtalkPlugin.outbound.sendMedia flow', () => {
     });
 
     it('throws download-stage error and does not call proactive send', async () => {
-        prepareMediaInputMock.mockRejectedValueOnce(new Error('remote media URL points to private or local network host'));
+        const err = new Error('remote media URL points to private or local network host');
+        (err as any).code = 'ERR_MEDIA_PRIVATE_HOST';
+        prepareMediaInputMock.mockRejectedValueOnce(err);
 
         await expect(
             dingtalkPlugin.outbound.sendMedia({
@@ -151,7 +153,7 @@ describe('dingtalkPlugin.outbound.sendMedia flow', () => {
                 mediaUrl: 'http://127.0.0.1/photo.png',
                 accountId: 'default',
             })
-        ).rejects.toThrow(/remote media preparation failed/);
+        ).rejects.toThrow(/remote media preparation failed: \[ERR_MEDIA_PRIVATE_HOST\]/);
 
         expect(sendProactiveMediaMock).not.toHaveBeenCalled();
     });

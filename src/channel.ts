@@ -240,7 +240,8 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
           if (err?.response?.data !== undefined) {
             log?.error?.(formatDingTalkErrorPayloadLog("outbound.sendMedia.prepare", err.response.data));
           }
-          throw new Error(`remote media preparation failed: ${err?.message || "unknown error"}`, {
+          const errorCode = typeof err?.code === "string" ? `[${err.code}] ` : "";
+          throw new Error(`remote media preparation failed: ${errorCode}${err?.message || "unknown error"}`, {
             cause: err,
           });
         }

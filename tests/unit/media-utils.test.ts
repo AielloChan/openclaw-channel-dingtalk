@@ -140,11 +140,32 @@ describe('media-utils', () => {
         await prepared.cleanup?.();
     });
 
+    it('allows IPv6 private literal when matching IPv6 CIDR allowlist', async () => {
+        mockedAxiosGet.mockResolvedValueOnce({
+            data: Buffer.from('img'),
+            headers: { 'content-type': 'image/png' },
+        } as any);
+
+        const prepared = await prepareMediaInput('http://[fd00::1]/path/photo.png', undefined, ['fc00::/7']);
+
+        expect(fs.existsSync(prepared.path)).toBe(true);
+        await prepared.cleanup?.();
+    });
+
     it('rejects remote hosts not listed in mediaUrlAllowlist when allowlist is configured', async () => {
-        await expect(
-            prepareMediaInput('https://example.com/path/photo.png', undefined, ['cdn.example.com'])
-        ).rejects.toThrow(/not in mediaUrlAllowlist/);
+        await expect(prepareMediaInput('https://example.com/path/photo.png', undefined, ['cdn.example.com'])).rejects.toThrow(
+            /not in mediaUrlAllowlist/
+        );
         expect(mockedAxiosGet).not.toHaveBeenCalled();
+    });
+
+    it('returns stable error code for allowlist misses', async () => {
+        try {
+            await prepareMediaInput('https://example.com/path/photo.png', undefined, ['cdn.example.com']);
+            throw new Error('expected prepareMediaInput to throw');
+        } catch (err: any) {
+            expect(err.code).toBe('ERR_MEDIA_ALLOWLIST_MISS');
+        }
     });
 
     it('logs warn when cleanup fails for unexpected file-system errors', async () => {
